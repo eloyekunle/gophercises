@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -21,22 +22,27 @@ func main() {
 	var totalProblems, correctAnswers int
 	inputReader := bufio.NewReader(os.Stdin)
 
-	for {
-		line, error := reader.Read()
-		if error == io.EOF {
-			break
-		} else if error != nil {
-			log.Fatal(error)
-		}
+	go func() {
+		for {
+			line, error := reader.Read()
+			if error == io.EOF {
+				break
+			} else if error != nil {
+				log.Fatal(error)
+			}
 
-		totalProblems++
-		fmt.Printf("Problem #%d: %s = ", totalProblems, line[0])
-		ans, _ := inputReader.ReadString('\n')
-		ans = strings.TrimSpace(ans)
+			totalProblems++
+			fmt.Printf("Problem #%d: %s = ", totalProblems, line[0])
 
-		if ans == line[1] {
-			correctAnswers++
+			ticker := time.NewTicker(time.Second * time.Duration(*limitPtr))
+
+			ans, _ := inputReader.ReadString('\n')
+			ans = strings.TrimSpace(ans)
+
+			if ans == line[1] {
+				correctAnswers++
+			}
 		}
-	}
+	}()
 	fmt.Printf("Answered %d correctly out of %d.\n", correctAnswers, totalProblems)
 }
