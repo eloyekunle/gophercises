@@ -13,6 +13,7 @@ import (
 
 func main() {
 	csvFilePtr := flag.String("csv", "../problems.csv", "A CSV file in the format of 'question,answer'")
+	limitPtr := flag.Int("limit", 30, "The time limit for the quiz in seconds.")
 	flag.Parse()
 
 	csvFile, _ := os.Open(*csvFilePtr)
@@ -31,7 +32,7 @@ func main() {
 		totalProblems++
 		fmt.Printf("Problem #%d: %s = ", totalProblems, line[0])
 		ans, _ := inputReader.ReadString('\n')
-		ans = strings.TrimSuffix(ans, "\n")
+		ans = strings.TrimSpace(ans)
 
 		if ans == line[1] {
 			correctAnswers++
