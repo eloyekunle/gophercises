@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/csv"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -11,8 +12,11 @@ import (
 )
 
 func main() {
-	problemsFile, _ := os.Open("../problems.csv")
-	reader := csv.NewReader(bufio.NewReader(problemsFile))
+	csvFilePtr := flag.String("csv", "../problems.csv", "A CSV file in the format of 'question,answer'")
+	flag.Parse()
+
+	csvFile, _ := os.Open(*csvFilePtr)
+	reader := csv.NewReader(bufio.NewReader(csvFile))
 	var totalProblems, correctAnswers int
 	inputReader := bufio.NewReader(os.Stdin)
 
@@ -25,7 +29,7 @@ func main() {
 		}
 
 		totalProblems++
-		fmt.Println(line[0])
+		fmt.Printf("Problem #%d: %s = ", totalProblems, line[0])
 		ans, _ := inputReader.ReadString('\n')
 		ans = strings.TrimSuffix(ans, "\n")
 
