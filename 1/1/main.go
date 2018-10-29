@@ -37,5 +37,5 @@ func main() {
 			correctAnswers++
 		}
 	}
-	fmt.Println(correctAnswers, totalProblems)
+	fmt.Printf("Answered %d correctly out of %d.\n", correctAnswers, totalProblems)
 }
