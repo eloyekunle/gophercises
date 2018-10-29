@@ -2,8 +2,8 @@ package main
 
 import (
 	"bufio"
+	"encoding/csv"
 	"os"
-	"path/filepath"
 )
 
 type Problem struct {
@@ -12,6 +12,8 @@ type Problem struct {
 }
 
 func main() {
-	problemsFile, _ := filepath.Abs("../problems.csv")
-	reader := bufio.NewReader(os.Stdin)
+	problemsFile, _ := os.Open("../problems.csv")
+	reader := csv.NewReader(bufio.NewReader(problemsFile))
+
+	inputReader := bufio.NewReader(os.Stdin)
 }
