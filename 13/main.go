@@ -38,19 +38,24 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 			return
 		}
 		var stories []item
-		for _, id := range ids {
-			hnItem, err := client.GetItem(id)
-			if err != nil {
-				continue
-			}
-			item := parseHNItem(hnItem)
-			if isStoryLink(item) {
-				stories = append(stories, item)
-				if len(stories) >= numStories {
-					break
+		c := make(chan item, numStories)
+		
+		go func() {
+			for _, id := range ids {
+				hnItem, err := client.GetItem(id)
+				if err != nil {
+					continue
+				}
+				item := parseHNItem(hnItem)
+				if isStoryLink(item) {
+					stories = append(stories, item)
+					if len(stories) >= numStories {
+						break
+					}
 				}
 			}
-		}
+		}()
+		
 		data := templateData{
 			Stories: stories,
 			Time:    time.Now().Sub(start),
