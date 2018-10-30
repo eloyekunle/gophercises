@@ -6,46 +6,66 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strings"
 	"time"
 )
 
-func main() {
-	csvFilePtr := flag.String("csv", "../problems.csv", "A CSV file in the format of 'question,answer'")
-	limitPtr := flag.Int("limit", 2, "The time limit for the quiz in seconds.")
-	flag.Parse()
+type problem struct {
+	question, answer string
+}
 
-	csvFile, _ := os.Open(*csvFilePtr)
+func readCSV(filename string) ([]problem, error) {
+	csvFile, _ := os.Open(filename)
 	reader := csv.NewReader(bufio.NewReader(csvFile))
-	var totalProblems, correctAnswers int
-	inputReader := bufio.NewReader(os.Stdin)
+	defer csvFile.Close()
+
+	out := []problem{}
 
 	for {
 		line, err := reader.Read()
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 
-		totalProblems++
-		fmt.Printf("Problem #%d: %s = ", totalProblems, line[0])
-
-		ticker := time.NewTicker(time.Second * time.Duration(*limitPtr))
-
-		select {
-		case <-ticker.C:
-			break
-		}
-
-		ans, _ := inputReader.ReadString('\n')
-		ans = strings.TrimSpace(ans)
-
-		if ans == line[1] {
-			correctAnswers++
-		}
+		out = append(out, problem{line[0], line[1]})
 	}
-	fmt.Printf("Answered %d correctly out of %d.\n", correctAnswers, totalProblems)
+
+	return out, nil
+}
+
+func main() {
+	csvFilePtr := flag.String("csv", "../problems.csv", "A CSV file in the format of 'question,answer'")
+	limitPtr := flag.Int("limit", 2, "The time limit for the quiz in seconds.")
+	flag.Parse()
+
+	problems, _ := readCSV(*csvFilePtr)
+
+	var correctAnswers int
+	inputReader := bufio.NewReader(os.Stdin)
+
+	done := make(chan bool)
+	ticker := time.NewTicker(time.Second * time.Duration(*limitPtr))
+
+	go func() {
+		for i, q := range problems {
+			fmt.Printf("Problem #%d: %s = ", i+1, q.question)
+
+			ans, _ := inputReader.ReadString('\n')
+			ans = strings.TrimSpace(ans)
+
+			if ans == q.answer {
+				correctAnswers++
+			}
+		}
+		done <- true
+	}()
+
+	select {
+	case <-done:
+	case <-ticker.C:
+		fmt.Printf("\nAnswered %d correctly out of %d.\n", correctAnswers, len(problems))
+	}
 }
