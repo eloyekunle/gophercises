@@ -37,7 +37,8 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 			http.Error(w, "Failed to load top stories", http.StatusInternalServerError)
 			return
 		}
-		var stories []item
+		storiesMap := make(map[int]item, numStories)
+		stories := make([]item, numStories)
 		c := make(chan item, numStories)
 
 		for i := 0; i < numStories; i++ {
@@ -52,10 +53,14 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 		}
 
 		for item := range c {
-			stories = append(stories, item)
-			if len(stories) >= numStories {
+			storiesMap[item.Item.ID] = item
+			if len(storiesMap) >= numStories {
 				break
 			}
+		}
+
+		for i := 0; i < numStories; i++ {
+			stories[i] = storiesMap[ids[i]]
 		}
 
 		data := templateData{
