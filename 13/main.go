@@ -128,7 +128,7 @@ type templateData struct {
 	Time    time.Duration
 }
 
-// Represents an item in our cache.
+// Represents an item in our in-memory cache.
 type cacheItem struct {
 	Content    []byte
 	Expiration int64
