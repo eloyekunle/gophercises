@@ -14,14 +14,15 @@ import (
 	"github.com/eloyekunle/gophercises/13/hn"
 )
 
-var cache []byte
+var (
+	cache                           cacheItem
+	port, numStories, cacheDuration int
+)
 
 func main() {
-	// parse flags
-	var port, numStories, cacheDuration int
 	flag.IntVar(&port, "port", 3000, "the port to start the web server on")
 	flag.IntVar(&numStories, "num_stories", 30, "the number of top stories to display")
-	flag.IntVar(&cacheDuration, "cache_duration", 15, "duration in seconds to cache content")
+	flag.IntVar(&cacheDuration, "cache_duration", 5, "duration in seconds to cache content")
 	flag.Parse()
 
 	tpl := template.Must(template.ParseFiles("./index.gohtml"))
@@ -33,14 +34,17 @@ func main() {
 
 func cached(duration int, handler func(w http.ResponseWriter, r *http.Request)) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if cache != nil {
-			w.Write(cache)
+		if cache.Content != nil && time.Now().UnixNano() < cache.Expiration {
+			w.Write(cache.Content)
 		} else {
 			c := httptest.NewRecorder()
 			handler(c, r)
 
 			content := c.Body.Bytes()
-			cache = content
+			cache = cacheItem{
+				Content:    content,
+				Expiration: time.Now().Add(time.Duration(cacheDuration) * time.Second).UnixNano(),
+			}
 			w.Write(content)
 		}
 	})
@@ -63,8 +67,7 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 		c := make(chan Story)
 
 		for i := 0; i < hedgedNum; i++ {
-			// Passing in 'i' just so I can see what order the babies arrive.
-			go func(i int, id int) {
+			go func(id int) {
 				hnItem, _ := client.GetItem(id)
 				item := parseHNItem(hnItem)
 				if isStoryLink(item) {
@@ -74,7 +77,7 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 				if seen == hedgedNum {
 					close(c)
 				}
-			}(i, ids[i])
+			}(ids[i])
 		}
 
 		for item := range c {
@@ -123,4 +126,10 @@ type Story struct {
 type templateData struct {
 	Stories []Story
 	Time    time.Duration
+}
+
+// Represents an item in our cache.
+type cacheItem struct {
+	Content    []byte
+	Expiration int64
 }
