@@ -15,7 +15,6 @@ import (
 )
 
 var (
-	cache                           cacheItem
 	port, numStories, cacheDuration int
 	storyMutex, cacheMutex          sync.Mutex
 )
@@ -23,7 +22,7 @@ var (
 func main() {
 	flag.IntVar(&port, "port", 3000, "the port to start the web server on")
 	flag.IntVar(&numStories, "num_stories", 30, "the number of top stories to display")
-	flag.IntVar(&cacheDuration, "cache_duration", 5, "duration in seconds to cache content")
+	flag.IntVar(&cacheDuration, "cache_duration", 6, "duration in seconds to cache content")
 	flag.Parse()
 
 	tpl := template.Must(template.ParseFiles("./index.gohtml"))
@@ -33,11 +32,52 @@ func main() {
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
 }
 
+// StoryCache is our cache.
+type StoryCache struct {
+	Content    []Story
+	Expiration int64
+	Mutex      sync.Mutex
+}
+
+func (sc *StoryCache) stories() ([]Story, error) {
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+
+	if sc.Content != nil && time.Now().UnixNano() < sc.Expiration {
+		return sc.Content, nil
+	}
+	stories, err := getTopStories()
+	if err != nil {
+		return nil, err
+	}
+
+	sc.Content = stories
+	sc.Expiration = time.Now().Add(time.Duration(cacheDuration) * time.Second).UnixNano()
+	return stories, nil
+}
+
 func handler(numStories int, tpl *template.Template) http.HandlerFunc {
+	sc := StoryCache{}
+
+	go func() {
+		ticker := time.NewTicker(3 * time.Second)
+
+		for {
+			temp := StoryCache{}
+			temp.stories()
+
+			sc.Mutex.Lock()
+			sc.Content = temp.Content
+			sc.Expiration = temp.Expiration
+			sc.Mutex.Unlock()
+			<-ticker.C
+		}
+	}()
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		stories, err := cachedTopStories(getTopStories)
+		stories, err := sc.stories()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -53,23 +93,6 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 			return
 		}
 	})
-}
-
-func cachedTopStories(getTopStories func() ([]Story, error)) ([]Story, error) {
-	cacheMutex.Lock()
-	defer cacheMutex.Unlock()
-
-	if cache.Content != nil && time.Now().UnixNano() < cache.Expiration {
-		return cache.Content, nil
-	}
-	stories, err := getTopStories()
-	if err != nil {
-		return nil, err
-	}
-
-	cache.Content = stories
-	cache.Expiration = time.Now().Add(time.Duration(cacheDuration) * time.Second).UnixNano()
-	return stories, nil
 }
 
 func getTopStories() ([]Story, error) {
@@ -139,11 +162,4 @@ type Story struct {
 type templateData struct {
 	Stories []Story
 	Time    time.Duration
-}
-
-// Represents an item in our in-memory cache.
-type cacheItem struct {
-	Content    []Story
-	Expiration int64
-	Mutex      sync.Mutex
 }
