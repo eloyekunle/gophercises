@@ -37,11 +37,14 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 			http.Error(w, "Failed to load top stories", http.StatusInternalServerError)
 			return
 		}
-		storiesMap := make(map[int]item, numStories)
-		stories := make([]item, numStories)
-		c := make(chan item, numStories)
+		storiesMap := make(map[int]Story, numStories)
+		var stories []Story
+		// We're getting slightly more than 'numStories' to account for filtering.
+		hedgedNum := int(float64(numStories) * 1.25)
+		seen := 0
+		c := make(chan Story)
 
-		for i := 0; i < numStories; i++ {
+		for i := 0; i < hedgedNum; i++ {
 			// Passing in 'i' just so I can see what order the babies arrive.
 			go func(i int, id int) {
 				hnItem, _ := client.GetItem(id)
@@ -49,18 +52,26 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 				if isStoryLink(item) {
 					c <- item
 				}
+				seen++
+				if seen == hedgedNum {
+					close(c)
+				}
 			}(i, ids[i])
 		}
 
 		for item := range c {
 			storiesMap[item.Item.ID] = item
-			if len(storiesMap) >= numStories {
-				break
-			}
 		}
 
-		for i := 0; i < numStories; i++ {
-			stories[i] = storiesMap[ids[i]]
+		for i := 0; i < hedgedNum; i++ {
+			item, ok := storiesMap[ids[i]]
+
+			if ok {
+				stories = append(stories, item)
+			}
+			if len(stories) == numStories {
+				break
+			}
 		}
 
 		data := templateData{
@@ -75,12 +86,12 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 	})
 }
 
-func isStoryLink(item item) bool {
+func isStoryLink(item Story) bool {
 	return item.Type == "story" && item.URL != ""
 }
 
-func parseHNItem(hnItem hn.Item) item {
-	ret := item{Item: hnItem}
+func parseHNItem(hnItem hn.Item) Story {
+	ret := Story{Item: hnItem}
 	url, err := url.Parse(ret.URL)
 	if err == nil {
 		ret.Host = strings.TrimPrefix(url.Hostname(), "www.")
@@ -88,13 +99,13 @@ func parseHNItem(hnItem hn.Item) item {
 	return ret
 }
 
-// item is the same as the hn.Item, but adds the Host field
-type item struct {
+// Story is the same as the hn.Item, but adds the Host field
+type Story struct {
 	hn.Item
 	Host string
 }
 
 type templateData struct {
-	Stories []item
+	Stories []Story
 	Time    time.Duration
 }
