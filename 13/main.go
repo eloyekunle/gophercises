@@ -59,10 +59,8 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 			http.Error(w, "Failed to load top stories", http.StatusInternalServerError)
 			return
 		}
-		storiesMap := make(map[int]Story, numStories)
-		var stories []Story
 		// We're getting slightly more than 'numStories' to account for filtering.
-		hedgedNum := int(float64(numStories) * 1.25)
+		hedgedNum := numStories * 5 / 4
 		seen := 0
 		c := make(chan Story)
 
@@ -80,10 +78,12 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 			}(ids[i])
 		}
 
+		storiesMap := make(map[int]Story, numStories)
 		for item := range c {
 			storiesMap[item.Item.ID] = item
 		}
 
+		var stories []Story
 		for i := 0; len(stories) < numStories; i++ {
 			item, ok := storiesMap[ids[i]]
 
