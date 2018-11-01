@@ -17,6 +17,7 @@ import (
 var (
 	cache                           cacheItem
 	port, numStories, cacheDuration int
+	storyMutex, cacheMutex          sync.Mutex
 )
 
 func main() {
@@ -32,13 +33,15 @@ func main() {
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
 }
 
-var storyMutex sync.Mutex
-
 func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		stories, err := getTopStories()
+		stories, err := cachedTopStories(getTopStories)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		data := templateData{
 			Stories: stories,
@@ -50,6 +53,23 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 			return
 		}
 	})
+}
+
+func cachedTopStories(getTopStories func() ([]Story, error)) ([]Story, error) {
+	cacheMutex.Lock()
+	defer cacheMutex.Unlock()
+
+	if cache.Content != nil && time.Now().UnixNano() < cache.Expiration {
+		return cache.Content, nil
+	}
+	stories, err := getTopStories()
+	if err != nil {
+		return nil, err
+	}
+
+	cache.Content = stories
+	cache.Expiration = time.Now().Add(time.Duration(cacheDuration) * time.Second).UnixNano()
+	return stories, nil
 }
 
 func getTopStories() ([]Story, error) {
@@ -123,7 +143,7 @@ type templateData struct {
 
 // Represents an item in our in-memory cache.
 type cacheItem struct {
-	Content    []byte
+	Content    []Story
 	Expiration int64
 	Mutex      sync.Mutex
 }
