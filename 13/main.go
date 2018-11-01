@@ -39,23 +39,25 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 		}
 		var stories []item
 		c := make(chan item, numStories)
-		
-		go func() {
-			for _, id := range ids {
-				hnItem, err := client.GetItem(id)
-				if err != nil {
-					continue
-				}
+
+		for i := 0; i < numStories; i++ {
+			// Passing in 'i' just so I can see what order the babies arrive.
+			go func(i int, id int) {
+				hnItem, _ := client.GetItem(id)
 				item := parseHNItem(hnItem)
 				if isStoryLink(item) {
-					stories = append(stories, item)
-					if len(stories) >= numStories {
-						break
-					}
+					c <- item
 				}
+			}(i, ids[i])
+		}
+
+		for item := range c {
+			stories = append(stories, item)
+			if len(stories) >= numStories {
+				break
 			}
-		}()
-		
+		}
+
 		data := templateData{
 			Stories: stories,
 			Time:    time.Now().Sub(start),
