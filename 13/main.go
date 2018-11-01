@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"time"
@@ -13,19 +14,36 @@ import (
 	"github.com/eloyekunle/gophercises/13/hn"
 )
 
+var cache []byte
+
 func main() {
 	// parse flags
-	var port, numStories int
+	var port, numStories, cacheDuration int
 	flag.IntVar(&port, "port", 3000, "the port to start the web server on")
 	flag.IntVar(&numStories, "num_stories", 30, "the number of top stories to display")
+	flag.IntVar(&cacheDuration, "cache_duration", 15, "duration in seconds to cache content")
 	flag.Parse()
 
 	tpl := template.Must(template.ParseFiles("./index.gohtml"))
-
-	http.HandleFunc("/", handler(numStories, tpl))
+	http.HandleFunc("/", cached(cacheDuration, handler(numStories, tpl)))
 
 	// Start the server
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
+}
+
+func cached(duration int, handler func(w http.ResponseWriter, r *http.Request)) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if cache != nil {
+			w.Write(cache)
+		} else {
+			c := httptest.NewRecorder()
+			handler(c, r)
+
+			content := c.Body.Bytes()
+			cache = content
+			w.Write(content)
+		}
+	})
 }
 
 func handler(numStories int, tpl *template.Template) http.HandlerFunc {
@@ -63,14 +81,11 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 			storiesMap[item.Item.ID] = item
 		}
 
-		for i := 0; i < hedgedNum; i++ {
+		for i := 0; len(stories) < numStories; i++ {
 			item, ok := storiesMap[ids[i]]
 
 			if ok {
 				stories = append(stories, item)
-			}
-			if len(stories) == numStories {
-				break
 			}
 		}
 
