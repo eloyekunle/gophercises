@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/eloyekunle/gophercises/13/hn"
@@ -50,6 +51,8 @@ func cached(duration int, handler func(w http.ResponseWriter, r *http.Request)) 
 	})
 }
 
+var storyMutex sync.Mutex
+
 func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -71,6 +74,9 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 				if isStoryLink(item) {
 					c <- item
 				}
+
+				storyMutex.Lock()
+				defer storyMutex.Unlock()
 				seen++
 				if seen == hedgedNum {
 					close(c)
@@ -132,4 +138,5 @@ type templateData struct {
 type cacheItem struct {
 	Content    []byte
 	Expiration int64
+	Mutex      sync.Mutex
 }
