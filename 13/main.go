@@ -6,7 +6,6 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
@@ -27,28 +26,10 @@ func main() {
 	flag.Parse()
 
 	tpl := template.Must(template.ParseFiles("./index.gohtml"))
-	http.HandleFunc("/", cached(cacheDuration, handler(numStories, tpl)))
+	http.HandleFunc("/", handler(numStories, tpl))
 
 	// Start the server
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
-}
-
-func cached(duration int, handler func(w http.ResponseWriter, r *http.Request)) http.HandlerFunc {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if cache.Content != nil && time.Now().UnixNano() < cache.Expiration {
-			w.Write(cache.Content)
-		} else {
-			c := httptest.NewRecorder()
-			handler(c, r)
-
-			content := c.Body.Bytes()
-			cache = cacheItem{
-				Content:    content,
-				Expiration: time.Now().Add(time.Duration(cacheDuration) * time.Second).UnixNano(),
-			}
-			w.Write(content)
-		}
-	})
 }
 
 var storyMutex sync.Mutex
@@ -56,47 +37,8 @@ var storyMutex sync.Mutex
 func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		var client hn.Client
-		ids, err := client.TopItems()
-		if err != nil {
-			http.Error(w, "Failed to load top stories", http.StatusInternalServerError)
-			return
-		}
-		// We're getting slightly more than 'numStories' to account for filtering.
-		hedgedNum := numStories * 5 / 4
-		seen := 0
-		c := make(chan Story)
 
-		for i := 0; i < hedgedNum; i++ {
-			go func(id int) {
-				hnItem, _ := client.GetItem(id)
-				item := parseHNItem(hnItem)
-				if isStoryLink(item) {
-					c <- item
-				}
-
-				storyMutex.Lock()
-				defer storyMutex.Unlock()
-				seen++
-				if seen == hedgedNum {
-					close(c)
-				}
-			}(ids[i])
-		}
-
-		storiesMap := make(map[int]Story, numStories)
-		for item := range c {
-			storiesMap[item.Item.ID] = item
-		}
-
-		var stories []Story
-		for i := 0; len(stories) < numStories; i++ {
-			item, ok := storiesMap[ids[i]]
-
-			if ok {
-				stories = append(stories, item)
-			}
-		}
+		stories, err := getTopStories()
 
 		data := templateData{
 			Stories: stories,
@@ -108,6 +50,51 @@ func handler(numStories int, tpl *template.Template) http.HandlerFunc {
 			return
 		}
 	})
+}
+
+func getTopStories() ([]Story, error) {
+	var client hn.Client
+	ids, err := client.TopItems()
+	if err != nil {
+		return nil, err
+	}
+	// We're getting slightly more than 'numStories' to account for filtering.
+	hedgedNum := numStories * 5 / 4
+	seen := 0
+	c := make(chan Story)
+
+	for i := 0; i < hedgedNum; i++ {
+		go func(id int) {
+			hnItem, _ := client.GetItem(id)
+			item := parseHNItem(hnItem)
+			if isStoryLink(item) {
+				c <- item
+			}
+
+			storyMutex.Lock()
+			defer storyMutex.Unlock()
+			seen++
+			if seen == hedgedNum {
+				close(c)
+			}
+		}(ids[i])
+	}
+
+	storiesMap := make(map[int]Story, numStories)
+	for item := range c {
+		storiesMap[item.Item.ID] = item
+	}
+
+	var stories []Story
+	for i := 0; len(stories) < numStories; i++ {
+		item, ok := storiesMap[ids[i]]
+
+		if ok {
+			stories = append(stories, item)
+		}
+	}
+
+	return stories, nil
 }
 
 func isStoryLink(item Story) bool {
